@@ -109,7 +109,7 @@ def get_automotive_news():
         if data.get('status') == 'ok':
             count = 0
             for article in data['articles']:
-                if article['title'] and article['url'] and count < 2:
+                if article['title'] and article['url'] and count < 4:
                     article_data = {
                         'category': '국내 News',
                         'title': article['title'],
