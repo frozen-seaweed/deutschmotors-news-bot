@@ -1,63 +1,100 @@
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # GitHub Secrets에서 환경변수 가져오기
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID') 
 NEWS_API_KEY = os.environ.get('NEWS_API_KEY')
 
-def get_korean_news():
-    """한국 뉴스를 가져오는 함수"""
+def translate_to_korean(text):
+    """간단한 번역 함수 (Google Translate API 무료 버전)"""
+    try:
+        # Google Translate의 무료 엔드포인트 사용
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            'client': 'gtx',
+            'sl': 'en',  # 영어에서
+            'tl': 'ko',  # 한국어로
+            'dt': 't',
+            'q': text
+        }
+        
+        response = requests.get(url, params=params, timeout=5)
+        if response.status_code == 200:
+            result = response.json()
+            translated = result[0][0][0]
+            return translated
+        else:
+            return text  # 번역 실패시 원문 반환
+            
+    except Exception as e:
+        print(f"번역 오류: {e}")
+        return text  # 오류시 원문 반환
+
+def get_automotive_news():
+    """자동차 중심 뉴스 수집"""
     articles = []
     
     try:
-        # 경제 뉴스
-        print("📈 경제 뉴스 수집 중...")
-        url = "https://newsapi.org/v2/top-headlines"
-        params = {
-            'country': 'kr',
-            'category': 'business',
-            'pageSize': 2,
+        # 1. 한국 자동차 뉴스 (2개)
+        print("🚗 한국 자동차 뉴스 수집 중...")
+        korean_auto_params = {
+            'q': '현대차 OR 기아 OR 자동차 OR 전기차 OR EV OR 배터리 OR 충전소',
+            'language': 'ko',
+            'sortBy': 'publishedAt',
+            'pageSize': 5,
             'apiKey': NEWS_API_KEY
         }
         
-        response = requests.get(url, params=params)
+        response = requests.get("https://newsapi.org/v2/everything", params=korean_auto_params)
         data = response.json()
         
         if data.get('status') == 'ok':
-            for article in data['articles'][:2]:
-                if article['title'] and article['url']:
+            count = 0
+            for article in data['articles']:
+                if article['title'] and article['url'] and count < 2:
                     articles.append({
-                        'category': '📈 경제',
+                        'category': '🇰🇷 국내 자동차',
                         'title': article['title'],
                         'description': clean_text(article.get('description', '요약 없음')),
                         'url': article['url']
                     })
+                    count += 1
         
-        # 자동차 뉴스
-        print("🚗 자동차 뉴스 수집 중...")
-        url2 = "https://newsapi.org/v2/everything"
-        params2 = {
-            'q': '현대차 OR 기아 OR 자동차 OR 전기차',
-            'language': 'ko',
+        # 2. 해외 자동차 뉴스 (2개) - 영어 뉴스를 한국어로 번역
+        print("🌍 해외 자동차 뉴스 수집 중...")
+        
+        # 최근 2일 뉴스만 가져오기
+        two_days_ago = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+        
+        global_auto_params = {
+            'q': 'Tesla OR BMW OR Mercedes OR Volkswagen OR Toyota OR Ford OR electric vehicle OR EV OR autonomous',
+            'language': 'en',
             'sortBy': 'publishedAt',
-            'pageSize': 2,
+            'from': two_days_ago,
+            'pageSize': 5,
             'apiKey': NEWS_API_KEY
         }
         
-        response2 = requests.get(url2, params=params2)
-        data2 = response2.json()
+        response = requests.get("https://newsapi.org/v2/everything", params=global_auto_params)
+        data = response.json()
         
-        if data2.get('status') == 'ok':
-            for article in data2['articles'][:2]:
-                if article['title'] and article['url']:
+        if data.get('status') == 'ok':
+            count = 0
+            for article in data['articles']:
+                if article['title'] and article['url'] and count < 2:
+                    # 제목과 설명을 한국어로 번역
+                    translated_title = translate_to_korean(article['title'])
+                    translated_desc = translate_to_korean(article.get('description', 'No description'))
+                    
                     articles.append({
-                        'category': '🚗 자동차',
-                        'title': article['title'],
-                        'description': clean_text(article.get('description', '요약 없음')),
-                        'url': article['url']
+                        'category': '🌍 해외 자동차',
+                        'title': translated_title,
+                        'description': clean_text(translated_desc),
+                        'url': article['url']  # 원문 링크 유지
                     })
+                    count += 1
                     
     except Exception as e:
         print(f"뉴스 수집 오류: {e}")
@@ -73,33 +110,51 @@ def get_korean_news():
 
 def clean_text(text):
     """텍스트 정리 함수"""
-    if not text or text == 'None':
+    if not text or text == 'None' or text == 'No description':
         return "요약 정보 없음"
     
     # 불필요한 문자 제거
-    clean = text.replace('\n', ' ').replace('\r', '')
+    clean = text.replace('\n', ' ').replace('\r', '').replace('\t', ' ')
     clean = clean.replace('[', '').replace(']', '')
+    clean = clean.replace('(', '').replace(')', '')
+    
+    # 연속된 공백 제거
+    import re
+    clean = re.sub(r'\s+', ' ', clean).strip()
     
     # 길이 제한
-    if len(clean) > 100:
-        return clean[:100] + "..."
+    if len(clean) > 120:
+        return clean[:120] + "..."
     
     return clean
 
 def create_telegram_message(articles):
-    """텔레그램 메시지 만들기"""
+    """깔끔한 텔레그램 메시지 생성"""
     today = datetime.now().strftime('%Y년 %m월 %d일 %A')
     
-    message = f" *DeutschMotors News Bot*\n"
-    message += f"📅 {today}\n\n"
+    # 요일을 한글로 변환
+    weekdays = {
+        'Monday': '월요일', 'Tuesday': '화요일', 'Wednesday': '수요일',
+        'Thursday': '목요일', 'Friday': '금요일', 'Saturday': '토요일', 'Sunday': '일요일'
+    }
+    for eng, kor in weekdays.items():
+        today = today.replace(eng, kor)
+    
+    message = f"*도이치모터스 자동차 뉴스*\n"
+    message += f"{today}\n"
+    message += "─" * 25 + "\n\n"
     
     for i, article in enumerate(articles, 1):
-        message += f"{article['category']} *{article['title']}*\n"
-        message += f"💬 {article['description']}\n"
-        message += f"🔗 [기사 보기]({article['url']})\n\n"
+        # 카테고리 표시
+        category_clean = article['category']
+        
+        message += f"*{i}. [{category_clean}]*\n"
+        message += f"*{article['title']}*\n"
+        message += f"{article['description']}\n"
+        message += f"[📖 전체기사]({article['url']})\n\n"
     
-    message += "━━━━━━━━━━━━━━━━━━━\n"
-    message += "📱 자동 발송 | 도이치모터스"
+    message += "─" * 25 + "\n"
+    message += "DeutschMotors Daily Auto News"
     
     return message
 
@@ -131,7 +186,7 @@ def send_to_telegram(message):
 
 def main():
     """메인 실행 함수"""
-    print("🤖 도이치모터스 뉴스봇 시작!")
+    print("🚗 도이치모터스 자동차 뉴스봇 시작!")
     
     # 환경변수 확인
     if not all([BOT_TOKEN, CHAT_ID, NEWS_API_KEY]):
@@ -141,9 +196,9 @@ def main():
         print(f"NEWS_API_KEY: {'설정됨' if NEWS_API_KEY else '없음'}")
         return
     
-    # 뉴스 수집
-    articles = get_korean_news()
-    print(f"📰 총 {len(articles)}개 기사 수집 완료")
+    # 자동차 뉴스 수집
+    articles = get_automotive_news()
+    print(f"🚗 총 {len(articles)}개 자동차 뉴스 수집 완료")
     
     # 메시지 생성 및 전송
     message = create_telegram_message(articles)
