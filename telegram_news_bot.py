@@ -142,6 +142,7 @@ def create_telegram_message(articles):
     
     message = f"*DeutschMotors News Bot*\n"
     message += f"{today}\n"
+    message += " " * + "\n\n"
     
     for i, article in enumerate(articles, 1):
         # 카테고리 표시
@@ -150,7 +151,7 @@ def create_telegram_message(articles):
         message += f"*{i}. [{category_clean}]*\n"
         message += f"*{article['title']}*\n"
         message += f"{article['description']}\n"
-        message += f"[📖 전체기사]({article['url']})\n\n"
+        message += f"[📖 Read More]({article['url']})\n\n"
     
     return message
 
