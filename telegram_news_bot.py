@@ -111,7 +111,7 @@ def get_automotive_news():
             for article in data['articles']:
                 if article['title'] and article['url'] and count < 2:
                     article_data = {
-                        'category': '🇰🇷 국내 모빌리티',
+                        'category': '🇰🇷',
                         'title': article['title'],
                         'description': clean_text(article.get('description', '요약 없음')),
                         'url': article['url']
@@ -152,7 +152,7 @@ def get_automotive_news():
                     translated_desc = translate_to_korean(article.get('description', 'No description'))
                     
                     article_data = {
-                        'category': '🌍 해외 모빌리티',
+                        'category': '🌍 Global',
                         'title': translated_title,
                         'description': clean_text(translated_desc),
                         'url': article['url']  # 원문 링크 유지
@@ -215,7 +215,7 @@ def create_telegram_message(articles):
     
     message = f"*DeutschMotors News Bot*\n"
     message += f"{today}\n"
-    message += "\n\n"
+    message += "\n"
     
     if not articles:
         message += "🔍 오늘은 새로운 자동차 뉴스가 없습니다.\n"
@@ -230,7 +230,8 @@ def create_telegram_message(articles):
         message += f"*{article['title']}*\n"
         message += f"{article['description']}\n"
         message += f"[📖 Read More]({article['url']})\n\n"
-
+        
+        message += "\n\n"
     
     return message
 
