@@ -90,7 +90,7 @@ def create_telegram_message(articles):
     """텔레그램 메시지 만들기"""
     today = datetime.now().strftime('%Y년 %m월 %d일 %A')
     
-    message = f"🌅 *도이치모터스 모닝 뉴스*\n"
+    message = f" *DeutschMotors News Bot*\n"
     message += f"📅 {today}\n\n"
     
     for i, article in enumerate(articles, 1):
