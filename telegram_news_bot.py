@@ -111,7 +111,7 @@ def get_automotive_news():
             for article in data['articles']:
                 if article['title'] and article['url'] and count < 2:
                     article_data = {
-                        'category': '🇰🇷',
+                        'category': '국내 News',
                         'title': article['title'],
                         'description': clean_text(article.get('description', '요약 없음')),
                         'url': article['url']
@@ -152,7 +152,7 @@ def get_automotive_news():
                     translated_desc = translate_to_korean(article.get('description', 'No description'))
                     
                     article_data = {
-                        'category': '🌍 Global',
+                        'category': '글로벌 News',
                         'title': translated_title,
                         'description': clean_text(translated_desc),
                         'url': article['url']  # 원문 링크 유지
