@@ -231,7 +231,7 @@ def create_telegram_message(articles):
         message += f"{article['description']}\n"
         message += f"[📖 Read More]({article['url']})\n\n"
         
-        message += "\n\n"
+        message += "\n"
     
     return message
 
