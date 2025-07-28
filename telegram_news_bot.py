@@ -226,8 +226,7 @@ def create_telegram_message(articles):
         # 카테고리 표시
         category_clean = article['category']
         
-        message += f"*{i}. [{category_clean}]*\n"
-        message += f"*{article['title']}*\n"
+        message += f"*{i}. {article['title']}*\n"
         message += f"{article['description']}\n"
         message += f"[📖 Read More]({article['url']})\n\n"
         
