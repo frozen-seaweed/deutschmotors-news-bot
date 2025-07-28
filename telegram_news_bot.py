@@ -88,18 +88,18 @@ def translate_to_korean(text):
         return text  # 오류시 원문 반환
 
 def get_automotive_news():
-    """자동차 중심 뉴스 수집 (중복 제거 포함)"""
+    """자동차 중심 뉴스 수집 (국내 뉴스만)"""
     articles = []
     sent_articles = load_sent_articles()
     
     try:
-        # 1. 한국 자동차 뉴스
+        # ✅ 한국 자동차 뉴스만 수집
         print("🚗 한국 자동차 뉴스 수집 중...")
         korean_auto_params = {
             'q': '모빌리티 OR 딜러사 OR 현대차 OR 기아 OR 자동차 OR 전기차 OR EV OR 배터리 OR 충전소',
             'language': 'ko',
             'sortBy': 'publishedAt',
-            'pageSize': 10,  # 중복 제거를 위해 더 많이 가져옴
+            'pageSize': 10,
             'apiKey': NEWS_API_KEY
         }
         
@@ -117,58 +117,15 @@ def get_automotive_news():
                         'url': article['url']
                     }
                     
-                    # 중복 확인
                     if not is_duplicate_article(article_data, sent_articles):
                         articles.append(article_data)
                         count += 1
                         print(f"✅ 새로운 국내 뉴스: {article['title'][:50]}...")
                     else:
                         print(f"⏭️  중복 국내 뉴스 건너뛰기: {article['title'][:50]}...")
-        
-        # 2. 해외 자동차 뉴스 (영어 뉴스를 한국어로 번역)
-        print("🌍 해외 모빌리티 뉴스 수집 중...")
-        
-        # 최근 2일 뉴스만 가져오기
-        two_days_ago = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-        
-        global_auto_params = {
-            'q': 'Tesla OR BMW OR Mercedes OR Volkswagen OR Toyota OR Ford OR electric vehicle OR EV OR vehicle',
-            'language': 'en',
-            'sortBy': 'publishedAt',
-            'from': two_days_ago,
-            'pageSize': 10,  # 중복 제거를 위해 더 많이 가져옴
-            'apiKey': NEWS_API_KEY
-        }
-        
-        response = requests.get("https://newsapi.org/v2/everything", params=global_auto_params)
-        data = response.json()
-        
-        if data.get('status') == 'ok':
-            count = 0
-            for article in data['articles']:
-                if article['title'] and article['url'] and count < 2:
-                    # 제목과 설명을 한국어로 번역
-                    translated_title = translate_to_korean(article['title'])
-                    translated_desc = translate_to_korean(article.get('description', 'No description'))
-                    
-                    article_data = {
-                        'category': '글로벌 News',
-                        'title': translated_title,
-                        'description': clean_text(translated_desc),
-                        'url': article['url']  # 원문 링크 유지
-                    }
-                    
-                    # 중복 확인 (원문 URL 기준)
-                    if not is_duplicate_article(article_data, sent_articles):
-                        articles.append(article_data)
-                        count += 1
-                        print(f"✅ 새로운 해외 뉴스: {translated_title[:50]}...")
-                    else:
-                        print(f"⏭️  중복 해외 뉴스 건너뛰기: {translated_title[:50]}...")
-                    
+    
     except Exception as e:
         print(f"뉴스 수집 오류: {e}")
-        # 오류시 테스트 뉴스 반환 (중복이 아닌 경우만)
         test_article = {
             'category': '🔧 알림',
             'title': f'뉴스 시스템 점검 중입니다 - {datetime.now().strftime("%H:%M")}',
