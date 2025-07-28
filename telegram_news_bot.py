@@ -230,8 +230,7 @@ def create_telegram_message(articles):
         message += f"*{article['title']}*\n"
         message += f"{article['description']}\n"
         message += f"[📖 Read More]({article['url']})\n\n"
-    
-    message += f"📊 오늘 전송된 새 기사: {len(articles)}개"
+
     
     return message
 
