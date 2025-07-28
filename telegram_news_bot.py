@@ -132,7 +132,7 @@ def get_automotive_news():
         two_days_ago = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
         
         global_auto_params = {
-            'q': 'Tesla OR BMW OR Mercedes OR Volkswagen OR Toyota OR Ford OR electric vehicle OR EV OR autonomous',
+            'q': 'Tesla OR BMW OR Mercedes OR Volkswagen OR Toyota OR Ford OR electric vehicle OR EV OR vehicle',
             'language': 'en',
             'sortBy': 'publishedAt',
             'from': two_days_ago,
