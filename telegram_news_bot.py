@@ -215,7 +215,7 @@ def create_telegram_message(articles):
     
     message = f"*DeutschMotors News Bot*\n"
     message += f"{today}\n"
-    message += "═══════════════════════\n\n"
+    message += "\n\n"
     
     if not articles:
         message += "🔍 오늘은 새로운 자동차 뉴스가 없습니다.\n"
