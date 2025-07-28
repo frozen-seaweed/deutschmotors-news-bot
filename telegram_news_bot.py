@@ -55,7 +55,7 @@ def get_automotive_news():
             for article in data['articles']:
                 if article['title'] and article['url'] and count < 2:
                     articles.append({
-                        'category': '🇰🇷 국내 자동차',
+                        'category': '🇰🇷 국내 모빌리티',
                         'title': article['title'],
                         'description': clean_text(article.get('description', '요약 없음')),
                         'url': article['url']
@@ -63,7 +63,7 @@ def get_automotive_news():
                     count += 1
         
         # 2. 해외 자동차 뉴스 (2개) - 영어 뉴스를 한국어로 번역
-        print("🌍 해외 자동차 뉴스 수집 중...")
+        print("🌍 해외 모빌리티 뉴스 수집 중...")
         
         # 최근 2일 뉴스만 가져오기
         two_days_ago = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
@@ -89,7 +89,7 @@ def get_automotive_news():
                     translated_desc = translate_to_korean(article.get('description', 'No description'))
                     
                     articles.append({
-                        'category': '🌍 해외 자동차',
+                        'category': '🌍 해외 모빌리티',
                         'title': translated_title,
                         'description': clean_text(translated_desc),
                         'url': article['url']  # 원문 링크 유지
