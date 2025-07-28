@@ -140,9 +140,8 @@ def create_telegram_message(articles):
     for eng, kor in weekdays.items():
         today = today.replace(eng, kor)
     
-    message = f"*도이치모터스 자동차 뉴스*\n"
+    message = f"*DeutschMotors News Bot*\n"
     message += f"{today}\n"
-    message += "─" * 25 + "\n\n"
     
     for i, article in enumerate(articles, 1):
         # 카테고리 표시
@@ -152,9 +151,6 @@ def create_telegram_message(articles):
         message += f"*{article['title']}*\n"
         message += f"{article['description']}\n"
         message += f"[📖 전체기사]({article['url']})\n\n"
-    
-    message += "─" * 25 + "\n"
-    message += "DeutschMotors Daily Auto News"
     
     return message
 
