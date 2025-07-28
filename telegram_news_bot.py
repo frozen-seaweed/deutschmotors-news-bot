@@ -96,7 +96,7 @@ def get_automotive_news():
         # 1. 한국 자동차 뉴스
         print("🚗 한국 자동차 뉴스 수집 중...")
         korean_auto_params = {
-            'q': '현대차 OR 기아 OR 자동차 OR 전기차 OR EV OR 배터리 OR 충전소',
+            'q': '모빌리티 OR 딜러사 OR 현대차 OR 기아 OR 자동차 OR 전기차 OR EV OR 배터리 OR 충전소',
             'language': 'ko',
             'sortBy': 'publishedAt',
             'pageSize': 10,  # 중복 제거를 위해 더 많이 가져옴
