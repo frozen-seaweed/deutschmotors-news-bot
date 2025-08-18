@@ -1,4 +1,3 @@
-# vercel.json
 {
   "functions": {
     "api/*.py": {
@@ -20,12 +19,3 @@
     }
   ]
 }
-
-# requirements.txt (루트 폴더)
-requests==2.31.0
-
-# .gitignore (기존에 있다면 추가)
-user_preferences.json
-__pycache__/
-*.pyc
-.env
