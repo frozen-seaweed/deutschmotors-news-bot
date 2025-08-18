@@ -94,6 +94,10 @@ def load_preferences():
     try:
         token = os.environ.get("GITHUB_TOKEN")
         repo = os.environ.get("GITHUB_REPO")
+        
+        print(f"🔧 GITHUB_TOKEN: {token}")
+        print(f"🔧 GITHUB_REPO: {repo}")
+
         url = f"https://api.github.com/repos/{repo}/contents/user_preferences.json"
         headers = {"Authorization": f"token {token}"}
         r = requests.get(url, headers=headers)
