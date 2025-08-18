@@ -1,0 +1,31 @@
+# vercel.json
+{
+  "functions": {
+    "api/*.py": {
+      "runtime": "python3.9"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/webhook",
+      "dest": "/api/webhook.py"
+    },
+    {
+      "src": "/api/stats", 
+      "dest": "/api/webhook.py"
+    },
+    {
+      "src": "/",
+      "dest": "/api/webhook.py"
+    }
+  ]
+}
+
+# requirements.txt (루트 폴더)
+requests==2.31.0
+
+# .gitignore (기존에 있다면 추가)
+user_preferences.json
+__pycache__/
+*.pyc
+.env
