@@ -201,8 +201,8 @@ export default async function handler(req, res) {
     // Callback Query(좋아요/싫어요 버튼) 처리
     if (update.callback_query) {
       const cb = update.callback_query;
-      const data = cb.data || "";
-      const isLike = data.startsWith("like_");
+     const data = (cb.data || "").toLowerCase().trim();
+const isLike = /^like\b/.test(data);
       const chatId = cb.message?.chat?.id;
       const title = extractTitleFromMessageText(cb.message?.text || "");
 
