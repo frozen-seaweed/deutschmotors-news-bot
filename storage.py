@@ -11,10 +11,10 @@ HEADERS = {
     "Accept": "application/vnd.github+json",
 }
 
-PREF_PATH = "user_preferences.json"   # webhook.js가 업데이트 중
-SENT_PATH = "sent_articles.json"      # 우리가 보낸 기사 기록 파일
+PREF_PATH = "user_preferences.json"   # (webhook.js가 업데이트하는 파일)
+SENT_PATH = "sent_articles.json"      # (우리가 보낸 기사 기록 저장)
 
-# ---- URL 정규화: utm/fbclid 제거, 스킴/호스트 소문자, 트레일링 슬래시 제거, fragment 제거
+# ---- URL 정규화(중복 제거의 핵심): 추적 파라미터 제거, 소문자, 슬래시/프래그먼트 정리
 _DROP_QUERY_PREFIXES = ("utm_", "gclid", "fbclid")
 def normalize_url(url: str) -> str:
     try:
@@ -63,14 +63,10 @@ def build_keyword_weights():
 
 # ---- 보낸 기사 기록
 def load_sent_articles(days_to_keep=7):
-    """
-    sent_articles.json을 읽어 dict(url -> ISO시간) 반환.
-    7일 지난 기록은 자동 정리.
-    """
     data, sha = _get_from_github(SENT_PATH)
     if not isinstance(data, dict):
         data = {}
-    cutoff = datetime.utcnow() - timedelta(days=days_to_keep)
+    cutoff = datetime.utcnow() - timedelta(days=7)
     cleaned = {}
     for url, ts in data.items():
         try:
