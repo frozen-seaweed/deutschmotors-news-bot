@@ -40,7 +40,8 @@ def normalize_title(t: str) -> str:
     return t
 
 def send_news(article):
-    kb = {"inline_keyboard": [[{"text": "👍 좋아요", "callback_data": f"like:{article['url']}"}]]}
+-    kb = {"inline_keyboard": [[{"text": "👍 좋아요", "callback_data": f"like:{article['url']}"}]]}
++    kb = {"inline_keyboard": [[{"text": "👍 좋아요", "callback_data": "like"}]]}
     title = article.get("title","")
     desc  = article.get("description","") or ""
     link  = article.get("url","")
