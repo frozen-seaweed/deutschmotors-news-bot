@@ -101,12 +101,18 @@ def load_preferences():
         url = f"https://api.github.com/repos/{repo}/contents/user_preferences.json"
         headers = {"Authorization": f"token {token}"}
         r = requests.get(url, headers=headers)
+        print(f"📦 GitHub API status: {r.status_code}")
+        print(f"📦 GitHub API response: {r.text}")
+
         if r.status_code == 200:
             content = base64.b64decode(r.json()["content"]).decode()
             return json.loads(content)
-    except:
-        pass
-    return {"liked_keywords": {}, "total_likes": 0, "last_updated": "", "last_cleanup": ""}
+        else:
+            raise Exception(f"GitHub API 실패: {r.status_code} {r.text}")
+
+    except Exception as e:
+        print(f"❌ Error in load_preferences: {e}")
+        raise
 
 def update_user_preferences(title, is_like):
     prefs = load_preferences()
