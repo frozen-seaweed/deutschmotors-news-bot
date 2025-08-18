@@ -1,8 +1,12 @@
 # new_bot.py
-import os
-import requests
+import os, re, requests
 from datetime import datetime
-from storage import build_keyword_weights, load_sent_articles, save_sent_articles
+from storage import (
+    build_keyword_weights,
+    load_sent_articles,
+    save_sent_articles,
+    normalize_url,
+)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -13,90 +17,83 @@ def get_news():
     params = {
         "q": "자동차 OR 현대차 OR EV OR 배터리 OR 모빌리티 OR 기아",
         "language": "ko",
-        "pageSize": 20,              # 넉넉히 가져와서 필터링
+        "pageSize": 20,      # 넉넉히 가져와서 필터링
         "sortBy": "publishedAt",
         "apiKey": NEWS_API_KEY,
     }
-    r = requests.get(url, params=params, timeout=15)
+    r = requests.get(url, params=params, timeout=20)
     r.raise_for_status()
-    data = r.json()
-    return data.get("articles", [])
+    return r.json().get("articles", [])
 
 def score_article(article, keyword_weights):
-    """간단 점수: 제목+설명에 키워드가 있으면 가중치 더하기"""
     text = f"{article.get('title','')} {article.get('description','')}".lower()
     score = 0
-    for kw, w in keyword_weights.items():
+    for kw, w in (keyword_weights or {}).items():
         if kw.lower() in text:
             score += int(w) if isinstance(w, int) else 1
     return score
 
-def send_news(article):
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "👍 좋아요", "callback_data": f"like:{article['url']}"}],
-            # 필요하면 싫어요도 추가: [{"text":"👎 싫어요", "callback_data": f"dislike:{article['url']}"}]
-        ]
-    }
-    title = article.get("title", "")
-    desc = article.get("description", "") or ""
-    link = article.get("url", "")
+def normalize_title(t: str) -> str:
+    t = t or ""
+    t = re.sub(r"[\[\](){}“”\"'‘’]", "", t)
+    t = re.sub(r"\s+", " ", t).strip().lower()
+    return t
 
-    text = f"📰 {title}\n\n{desc}\n\n{link}"
-    data = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "reply_markup": keyboard,
-        # "disable_web_page_preview": False,  # 미리보기 끄려면 True
-    }
-    r = requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=data, timeout=15
-    )
+def send_news(article):
+    kb = {"inline_keyboard": [[{"text": "👍 좋아요", "callback_data": f"like:{article['url']}"}]]}
+    text = f"📰 {article.get('title','')}\n\n{article.get('description','') or ''}\n\n{article.get('url','')}"
+    payload = {"chat_id": CHAT_ID, "text": text, "reply_markup": kb}
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json=payload, timeout=20)
     r.raise_for_status()
 
 def send_daily_news():
-    # 1) 뉴스 수집
+    # 1) 수집
     articles = get_news()
 
-    # 2) 이미 보낸 URL 목록 불러오기(깃허브에서)
+    # 2) 과거 전송 기록 로드 (깃허브)
     sent_map, sent_sha = load_sent_articles()
 
-    # 3) 중복(이미 전송) 제거 + 현재 목록 내부 중복 제거
-    uniq = []
-    seen_now = set()
+    # 3) 정규화 기반 중복 제거 (URL + 제목)
+    uniq, seen_urls, seen_titles = [], set(), set()
     for a in articles:
         url = a.get("url")
         title = a.get("title")
         if not url or not title:
             continue
-        if url in sent_map:   # 과거에 보낸 적 있음 → 스킵
+
+        nurl = normalize_url(url)
+        ntit = normalize_title(title)
+
+        if nurl in sent_map:     # 과거에 보냄
             continue
-        if url in seen_now:   # 같은 실행 내 중복 → 스킵
+        if nurl in seen_urls:    # 같은 실행 내 중복 URL
             continue
-        seen_now.add(url)
+        if ntit in seen_titles:  # 같은 실행 내 제목 중복
+            continue
+
+        seen_urls.add(nurl)
+        seen_titles.add(ntit)
         uniq.append(a)
 
     if not uniq:
-        print("No new articles today.")
+        print("No new unique articles.")
         return
 
-    # 4) 키워드 가중치(좋아요 학습) 불러와서 점수 계산
+    # 4) 학습 가중치 반영해서 정렬
     kw_weights = build_keyword_weights()
-    sorted_articles = sorted(
-        uniq,
-        key=lambda a: score_article(a, kw_weights),
-        reverse=True
-    )
+    uniq.sort(key=lambda a: score_article(a, kw_weights), reverse=True)
 
-    # 5) 상위 4개만 전송
-    picked = sorted_articles[:4]
+    # 5) 상위 4건 전송
+    picked = uniq[:4]
     for art in picked:
         send_news(art)
 
-    # 6) 전송한 URL 깃허브에 기록
+    # 6) 전송한 것 기록 저장 (정규화 URL을 키로)
     now = datetime.utcnow().isoformat() + "Z"
     for art in picked:
-        sent_map[art["url"]] = now
+        nurl = normalize_url(art.get("url",""))
+        if nurl:
+            sent_map[nurl] = now
     save_sent_articles(sent_map, sent_sha)
 
 if __name__ == "__main__":
