@@ -40,28 +40,46 @@ def normalize_title(t: str) -> str:
     return t
 
 def send_news(article):
-    kb = {"inline_keyboard": [[{"text": "👍 좋아요", "callback_data": "like"}]]}
+    # ✅ 필수 ENV 확인 (없으면 바로 실패 이유가 로그에 찍혀요)
+    if not BOT_TOKEN:
+        raise RuntimeError("ENV TELEGRAM_BOT_TOKEN 이 비어있습니다.")
+    if not CHAT_ID:
+        raise RuntimeError("ENV TELEGRAM_CHAT_ID 이 비어있습니다. (채널이면 -100... 숫자ID 권장)")
 
-    title = article.get("title", "") or ""
-    desc  = article.get("description", "") or ""
-    link  = article.get("url", "") or ""
+    # 1) 데이터 추출
+    title = (article.get("title") or "").strip()
+    desc  = (article.get("description") or "").strip()
+    link  = (article.get("url") or "").strip()
 
-    text = f"*📰 {title}*\n\n{desc}\n\n{link}"
+    # 2) 파싱 문제 없는 '순수 텍스트' 본문 (parse_mode 사용 안 함)
+    text = f"📰 {title}\n\n{desc}\n\n{link}"
 
+    # 3) 인라인 키보드는 그대로 유지 (콜백 저장은 나중 단계에서)
     payload = {
-        "chat_id": CHAT_ID,
+        "chat_id": CHAT_ID,   # 채널이면 -100... 숫자ID 쓰는 게 가장 안전
         "text": text,
-        "reply_markup": kb,
-        "parse_mode": "Markdown"
+        "reply_markup": {"inline_keyboard": [[{"text": "👍 좋아요", "callback_data": "like"}]]}
+        # ⛔ parse_mode 제거: Markdown/HTML 파싱 에러 원천 차단
     }
 
     r = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         json=payload, timeout=20
     )
-    if r.status_code != 200:
-        print("Telegram error:", r.status_code, r.text)
-    r.raise_for_status()
+
+    # 4) 텔레그램 응답 그대로 확인 (왜 거절됐는지 바로 보이게)
+    ct = r.headers.get("Content-Type", "")
+    if "application/json" in ct:
+        data = r.json()
+        print("Telegram API response:", data)  # GitHub Actions 로그에서 확인
+        if not data.get("ok"):
+            # 예: "Bad Request: chat not found", "Forbidden: bot is not a member..."
+            raise RuntimeError(f"Telegram error: {data}")
+    else:
+        # 토큰 오타 등으로 JSON이 아닐 때
+        print("Telegram HTTP:", r.status_code, r.text)
+        r.raise_for_status()
+
 
 
 
