@@ -69,26 +69,27 @@ async function savePreferences(prefs, sha = null) {
   }
 }
 
-// ── 도우미: 키워드/제목 처리
 function extractTitleFromMessageText(text = "") {
-  // 메시지에서 제목 라인을 찾아 깨끗한 제목 문자열을 반환한다.
+  // 메시지에서 제목 라인을 찾아 깨끗한 제목 문자열을 반환
   // 허용: '*📰', '📰', '*✅', '✅' 로 시작하는 줄. 그래도 없으면 첫 번째 비어있지 않은 줄.
   const lines = (text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+
   let line =
     lines.find((l) => l.startsWith("*📰") || l.startsWith("📰")) ??
     lines.find((l) => l.startsWith("*✅") || l.startsWith("✅")) ??
     lines[0] ??
     "";
 
-  // 선행 마커·기호 제거
+  // 선행 기호 제거: 별표/이모지/번호
   line = line
-    .replace(/^\*+/, "")       // 선행 별표 제거
-    .replace(/^[📰✅]\s*/, "") // 선행 이모지 제거
+    .replace(/^\*+/, "")        // 선행 별표 제거
+    .replace(/^[📰✅]\s*/, "")  // 선행 이모지 제거
     .replace(/^([0-9]+)\.\s*/, "") // "1. " 같은 번호 제거
     .trim();
 
   return line;
 }
+
 
 function extractKeywords(title = "") {
   const patterns = [
