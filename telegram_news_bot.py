@@ -42,10 +42,9 @@ def normalize_title(t: str) -> str:
 def send_news(article):
     kb = {"inline_keyboard": [[{"text": "👍 좋아요", "callback_data": "like"}]]}
 
-    title = article.get("title", "")
+    title = article.get("title", "") or ""
     desc  = article.get("description", "") or ""
-    link  = article.get("url", "")
-
+    link  = article.get("url", "") or ""
 
     text = f"*📰 {title}*\n\n{desc}\n\n{link}"
 
@@ -53,14 +52,17 @@ def send_news(article):
         "chat_id": CHAT_ID,
         "text": text,
         "reply_markup": kb,
-        "parse_mode": "Markdown"  
+        "parse_mode": "Markdown"
     }
 
-    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                      json=payload, timeout=20)
+    r = requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+        json=payload, timeout=20
+    )
     if r.status_code != 200:
         print("Telegram error:", r.status_code, r.text)
     r.raise_for_status()
+
 
 
 
