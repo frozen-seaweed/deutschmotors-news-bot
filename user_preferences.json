@@ -1,6 +1,8 @@
 {
-  "liked_keywords": {},
-  "total_likes": 6,
+  "liked_keywords": {
+    "기아": 1
+  },
+  "total_likes": 7,
   "last_cleanup": "2025-01-01",
-  "last_updated": "2025-08-18T10:03:21.867Z"
+  "last_updated": "2025-08-19T04:34:00.537Z"
 }
