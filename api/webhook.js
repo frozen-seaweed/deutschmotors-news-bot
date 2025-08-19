@@ -71,15 +71,23 @@ async function savePreferences(prefs, sha = null) {
 
 // ── 도우미: 키워드/제목 처리
 function extractTitleFromMessageText(text = "") {
-  // 라인 중에서 *📰 로 시작하는 줄 찾기 → 앞/뒤 * 제거, "1. " 같은 번호 제거
-  const line =
-    (text.split("\n").find((l) => l.trim().startsWith("*📰")) ??
-      text.split("\n").find((l) => l.trim().startsWith("*✅")) ??
-      "").trim();
-  let title = line.replace(/\*/g, "");
-  title = title.replace(/^([0-9]+)\.\s*/, ""); // "1. " 제거
-  title = title.replace(/^📰\s*/, "").replace(/^✅\s*/, "");
-  return title.trim();
+  // 메시지에서 제목 라인을 찾아 깨끗한 제목 문자열을 반환한다.
+  // 허용: '*📰', '📰', '*✅', '✅' 로 시작하는 줄. 그래도 없으면 첫 번째 비어있지 않은 줄.
+  const lines = (text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  let line =
+    lines.find((l) => l.startsWith("*📰") || l.startsWith("📰")) ??
+    lines.find((l) => l.startsWith("*✅") || l.startsWith("✅")) ??
+    lines[0] ??
+    "";
+
+  // 선행 마커·기호 제거
+  line = line
+    .replace(/^\*+/, "")       // 선행 별표 제거
+    .replace(/^[📰✅]\s*/, "") // 선행 이모지 제거
+    .replace(/^([0-9]+)\.\s*/, "") // "1. " 같은 번호 제거
+    .trim();
+
+  return line;
 }
 
 function extractKeywords(title = "") {
@@ -103,25 +111,25 @@ function extractKeywords(title = "") {
     /딜러(?:사|십)?/gi,
     /중고차/gi,
     /리스|렌트/gi,
-    /모델[YS3X]?/gi,
     /아이오닉|쏘나타|아반떼|그랜저/gi,
   ];
-  let found = [];
-  for (const p of patterns) {
-    const m = title.match(p);
-    if (m) found = found.concat(m);
+  let found = new Set();
+  for (const re of patterns) {
+    const m = title.match(re);
+    if (m) for (const t of m) found.add(t.toLowerCase());
   }
-  // 일반 단어(한글/영문 2자 이상) 추출, 불용어 제외
-  const words = title.match(/[가-힣A-Za-z]{2,}/g) || [];
-  const stop = new Set(["기사", "뉴스", "관련", "발표", "출시", "판매"]);
-  for (const w of words) if (!stop.has(w)) found.push(w);
-  // 중복 제거 후 상위 5개만
-  return Array.from(new Set(found.map((x) => x.trim()))).slice(0, 5);
+  // 너무 일반적인 단어 정리
+  const stop = new Set(["뉴스", "속보", "브리핑"]);
+  found = new Set([...found].filter((t) => !stop.has(t)));
+  return [...found];
 }
 
-function updatePreferencesObject(prefs, keywords, isLike) {
+function updatePreferencesObject(prefs, keywords = [], isLike = true) {
+  prefs = prefs || {};
   const liked = prefs.liked_keywords || {};
+  // 점수 조정: 좋아요 +1, 싫어요 -1, 0 이하면 삭제
   for (const kw of keywords) {
+    if (!kw) continue;
     if (isLike) {
       liked[kw] = (liked[kw] || 0) + 1;
     } else {
@@ -166,15 +174,12 @@ async function statusHtml() {
     .join("");
 
   return `
-  <html><head><meta charset="utf-8" /><title>DeutschMotors News Bot</title></head>
-  <body style="font-family:system-ui, -apple-system, Segoe UI, Roboto; line-height:1.5;">
-    <h1>🤖 DeutschMotors News Bot</h1>
-    <p><b>상태:</b> 🟢 실행 중</p>
-    <p><b>총 좋아요:</b> ${data.total_likes || 0}개</p>
-    <p><b>학습된 키워드 수:</b> ${Object.keys(liked).length}개</p>
-    <h3>인기 키워드 TOP 10</h3>
-    <ol>${top || "<li>데이터 없음</li>"}</ol>
-    <hr />
+  <html><head><meta charset="utf-8"><title>Webhook Status</title></head>
+  <body style="font-family:system-ui,Segoe UI,Apple SD Gothic Neo,sans-serif;line-height:1.5;padding:24px">
+    <h1>Telegram Webhook</h1>
+    <p>선호 키워드 상위 10</p>
+    <ol>${top}</ol>
+    <hr/>
     <p style="color:#666">이 엔드포인트는 텔레그램 좋아요 콜백(Webhook)을 처리합니다.</p>
   </body></html>`;
 }
@@ -201,8 +206,8 @@ export default async function handler(req, res) {
     // Callback Query(좋아요/싫어요 버튼) 처리
     if (update.callback_query) {
       const cb = update.callback_query;
-     const data = (cb.data || "").toLowerCase().trim();
-const isLike = /^like\b/.test(data);
+      const data = (cb.data || "").toLowerCase().trim();
+      const isLike = /^like\b/.test(data); // 'like', 'LIKE:xxxx' 등 허용
       const chatId = cb.message?.chat?.id;
       const title = extractTitleFromMessageText(cb.message?.text || "");
 
@@ -212,7 +217,7 @@ const isLike = /^like\b/.test(data);
       const updated = updatePreferencesObject(prefs, keywords, isLike);
       await savePreferences(updated, sha);
 
-      // 텔레그램 응답
+      // 사용자 응답
       await tgAnswerCallback(cb.id);
       if (chatId) {
         const shortTitle = title ? `'${title.slice(0, 30)}...'` : "이 뉴스";
