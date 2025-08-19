@@ -46,18 +46,22 @@ def send_news(article):
     desc  = article.get("description", "") or ""
     link  = article.get("url", "")
 
-    text = f"📰 {title}\n\n{desc}\n\n{link}"
-    payload = {"chat_id": CHAT_ID, "text": text, "reply_markup": kb}
 
-    r = requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json=payload,
-        timeout=20
-    )
-    # 디버깅용(문제 생기면 에러 본문을 로그에 남김)
+    text = f"*📰 {title}*\n\n{desc}\n\n{link}"
+
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "reply_markup": kb,
+        "parse_mode": "Markdown"  
+    }
+
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                      json=payload, timeout=20)
     if r.status_code != 200:
         print("Telegram error:", r.status_code, r.text)
     r.raise_for_status()
+
 
 
 def send_daily_news():
