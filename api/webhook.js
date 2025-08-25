@@ -1,5 +1,6 @@
 // api/webhook.js
-// Vercel Node.js Serverless Function – Telegram webhook + GitHub 저장 + Upstash Redis 저장 + chatId 디버그 메시지
+// Telegram webhook → (1) Upstash Redis에 좋아요 저장  (2) (옵션) GitHub preferences 갱신
+// * 채팅으로 "반영됨!" 같은 메시지 절대 안 보냄 (answerCallbackQuery만 사용)
 
 export const config = { runtime: "nodejs" };
 
@@ -31,7 +32,7 @@ function dayKST() {
   return new Date(now).toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-// ── GitHub Contents API (user_preferences.json)
+// ── GitHub Contents API (레거시 선호도 파일 유지)
 async function loadPreferences() {
   const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/user_preferences.json`;
   const r = await fetch(url, {
@@ -71,7 +72,7 @@ async function savePreferences(prefs, sha = null) {
   }
 }
 
-// ── 제목/키워드
+// ── 제목/키워드 (레거시 유지: 상태 페이지/보조 통계용)
 function extractTitleFromMessageText(text = "") {
   const lines = (text || "").split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -112,9 +113,8 @@ function updatePreferencesObject(prefs, keywords = [], isLike = true) {
   const liked = prefs.liked_keywords || {};
   for (const kw of keywords) {
     if (!kw) continue;
-    if (isLike) {
-      liked[kw] = (liked[kw] || 0) + 1;
-    } else {
+    if (isLike) liked[kw] = (liked[kw] || 0) + 1;
+    else {
       if (liked[kw]) {
         liked[kw] = Math.max(0, liked[kw] - 1);
         if (liked[kw] === 0) delete liked[kw];
@@ -127,21 +127,14 @@ function updatePreferencesObject(prefs, keywords = [], isLike = true) {
   return prefs;
 }
 
-// ── 텔레그램 API
-async function tgAnswerCallback(id, text = "✅ 반영되었습니다!") {
+// ── 텔레그램 API (채팅 메시지는 보내지 않음)
+async function tgAnswerCallback(id, text = "👍 저장됨") {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
+  // show_alert: false → 작은 토스트로만 표시(채팅에 메시지 안 남음)
   await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ callback_query_id: id, text, show_alert: false }),
-  });
-}
-async function tgSendMessage(chatId, text) {
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
   });
 }
 
@@ -215,7 +208,6 @@ export default async function handler(req, res) {
       const raw = (cb.data || "").trim();
       const lower = raw.toLowerCase();
       const isLike = lower.startsWith("like"); // like, like:{...}
-      const chatId = cb.message?.chat?.id;
       const title = extractTitleFromMessageText(cb.message?.text || "");
 
       // 1) Upstash Redis에 좋아요 기사 저장 (학습 데이터)
@@ -230,22 +222,17 @@ export default async function handler(req, res) {
       }
 
       // 2) (레거시) GitHub 선호 키워드 갱신 – 유지
-      const { data: prefs, sha } = await loadPreferences();
-      const keywords = extractKeywords(title);
-      const updated = updatePreferencesObject(prefs, keywords, isLike);
-      await savePreferences(updated, sha);
-
-      // 3) 텔레그램 응답 + 디버그(chatId, userId 노출)
-      await tgAnswerCallback(cb.id, isLike ? "👍 좋아요 저장됨" : "👎 반영됨");
-      if (chatId) {
-        const shortTitle = title ? `'${title.slice(0, 30)}...'` : "이 뉴스";
-        const msg = isLike
-          ? `👍 ${shortTitle} 반영됨! 비슷한 뉴스 더 보여드릴게요.`
-          : `👎 ${shortTitle} 줄일게요.`;
-        await tgSendMessage(chatId, msg);
-        // ★ 디버그용: 아래 메시지에서 chatId, userId 숫자를 복사해서 사용하세요.
-        await tgSendMessage(chatId, `debug → chatId: ${chatId}, userId: ${cb.from?.id}`);
+      try {
+        const { data: prefs, sha } = await loadPreferences();
+        const keywords = extractKeywords(title);
+        const updated = updatePreferencesObject(prefs, keywords, isLike);
+        await savePreferences(updated, sha);
+      } catch (e) {
+        console.error("savePreferences failed:", e);
       }
+
+      // 3) 스피너만 종료(채팅 메시지 전송 없음)
+      await tgAnswerCallback(cb.id, "👍 저장됨");
       return res.status(200).json({ ok: true });
     }
 
