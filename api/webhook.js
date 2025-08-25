@@ -1,10 +1,15 @@
 // api/webhook.js
-// Vercel Node.js Serverless Function – Telegram webhook + GitHub 저장 + 상태 페이지
+// Vercel Node.js Serverless Function – Telegram webhook + GitHub 저장 + (추가) Upstash Redis에 좋아요 저장
 
-// ── 도우미: 환경변수
+export const config = { runtime: "nodejs" };
+
+// ── ENV
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = process.env.GITHUB_REPO; // 예: "frozen-seaweed/deutschmotors-news-bot"
+
+// (추가) Upstash Redis 헬퍼
+import { saveLike } from "../lib/store.js";
 
 function ensureEnv(res) {
   const missing = [];
@@ -14,17 +19,29 @@ function ensureEnv(res) {
   if (missing.length) {
     res
       .status(500)
-      .send("Missing env: " + missing.join(", ") + " (Vercel Project Settings에서 등록)");
+      .send(
+        "Missing env: " +
+          missing.join(", ") +
+          " (Vercel Project Settings에서 등록)"
+      );
     return false;
   }
   return true;
 }
 
-// ── 도우미: GitHub Contents API
+function dayKST() {
+  const now = Date.now() + 9 * 60 * 60 * 1000;
+  return new Date(now).toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+// ── GitHub Contents API
 async function loadPreferences() {
   const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/user_preferences.json`;
   const r = await fetch(url, {
-    headers: { Authorization: `token ${GITHUB_TOKEN}`, Accept: "application/vnd.github+json" },
+    headers: {
+      Authorization: `token ${GITHUB_TOKEN}`,
+      Accept: "application/vnd.github+json",
+    },
   });
 
   if (r.status === 200) {
@@ -33,7 +50,6 @@ async function loadPreferences() {
     return { data: JSON.parse(content), sha: j.sha };
   }
 
-  // 파일이 없거나 에러면 기본값
   return {
     data: {
       liked_keywords: {},
@@ -47,7 +63,9 @@ async function loadPreferences() {
 
 async function savePreferences(prefs, sha = null) {
   const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/user_preferences.json`;
-  const content = Buffer.from(JSON.stringify(prefs, null, 2), "utf8").toString("base64");
+  const content = Buffer.from(JSON.stringify(prefs, null, 2), "utf8").toString(
+    "base64"
+  );
   const body = {
     message: `Update preferences ${new Date().toISOString()}`,
     content,
@@ -69,10 +87,12 @@ async function savePreferences(prefs, sha = null) {
   }
 }
 
+// ── 제목 파싱
 function extractTitleFromMessageText(text = "") {
-  // 메시지에서 제목 라인을 찾아 깨끗한 제목 문자열을 반환
-  // 허용: '*📰', '📰', '*✅', '✅' 로 시작하는 줄. 그래도 없으면 첫 번째 비어있지 않은 줄.
-  const lines = (text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = (text || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
 
   let line =
     lines.find((l) => l.startsWith("*📰") || l.startsWith("📰")) ??
@@ -80,17 +100,16 @@ function extractTitleFromMessageText(text = "") {
     lines[0] ??
     "";
 
-  // 선행 기호 제거: 별표/이모지/번호
   line = line
-    .replace(/^\*+/, "")        // 선행 별표 제거
-    .replace(/^[📰✅]\s*/, "")  // 선행 이모지 제거
-    .replace(/^([0-9]+)\.\s*/, "") // "1. " 같은 번호 제거
+    .replace(/^\*+/, "")
+    .replace(/^[📰✅]\s*/, "")
+    .replace(/^([0-9]+)\.\s*/, "")
     .trim();
 
   return line;
 }
 
-
+// ── 키워드 추출
 function extractKeywords(title = "") {
   const patterns = [
     /현대(?:차|모터스)?/gi,
@@ -119,7 +138,6 @@ function extractKeywords(title = "") {
     const m = title.match(re);
     if (m) for (const t of m) found.add(t.toLowerCase());
   }
-  // 너무 일반적인 단어 정리
   const stop = new Set(["뉴스", "속보", "브리핑"]);
   found = new Set([...found].filter((t) => !stop.has(t)));
   return [...found];
@@ -128,7 +146,6 @@ function extractKeywords(title = "") {
 function updatePreferencesObject(prefs, keywords = [], isLike = true) {
   prefs = prefs || {};
   const liked = prefs.liked_keywords || {};
-  // 점수 조정: 좋아요 +1, 싫어요 -1, 0 이하면 삭제
   for (const kw of keywords) {
     if (!kw) continue;
     if (isLike) {
@@ -146,8 +163,8 @@ function updatePreferencesObject(prefs, keywords = [], isLike = true) {
   return prefs;
 }
 
-// ── 도우미: 텔레그램 응답
-async function tgAnswerCallback(id, text = "✅ 취향이 반영되었습니다!") {
+// ── 텔레그램 응답
+async function tgAnswerCallback(id, text = "✅ 반영되었습니다!") {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
   await fetch(url, {
     method: "POST",
@@ -162,6 +179,31 @@ async function tgSendMessage(chatId, text) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text }),
   });
+}
+
+// ── (추가) 버튼 payload에서 기사 정보 추출
+function extractArticleFromCallback(cb) {
+  const data = cb?.data || "";
+  // like:{"title":"...","url":"..."} 또는 dislike:{"url":"..."} 형식 지원
+  const idx = data.indexOf(":");
+  if (idx > -1) {
+    const payload = data.slice(idx + 1);
+    try {
+      const obj = JSON.parse(payload);
+      if (obj && (obj.title || obj.url || obj.summary)) {
+        return {
+          title: obj.title || extractTitleFromMessageText(cb.message?.text || ""),
+          summary: obj.summary || "",
+          url: obj.url || "",
+        };
+      }
+    } catch {
+      // 무시하고 본문에서 추출
+    }
+  }
+  const title = extractTitleFromMessageText(cb?.message?.text || "");
+  const urlMatch = (cb?.message?.text || "").match(/https?:\/\/\S+/);
+  return { title: title || "기사", summary: "", url: urlMatch?.[0] || "" };
 }
 
 // ── 상태 페이지 (GET)
@@ -200,26 +242,38 @@ export default async function handler(req, res) {
       return res.status(405).send("Method Not Allowed");
     }
 
-    // Telegram Webhook 바디
-    const update = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const update =
+      typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     if (!update) return res.status(200).json({ ok: true, note: "empty body" });
 
-    // Callback Query(좋아요/싫어요 버튼) 처리
+    // Callback Query(좋아요/싫어요 버튼)
     if (update.callback_query) {
       const cb = update.callback_query;
-      const data = (cb.data || "").toLowerCase().trim();
-      const isLike = /^like\b/.test(data); // 'like', 'LIKE:xxxx' 등 허용
+      const raw = (cb.data || "").trim();
+      const lower = raw.toLowerCase();
+      const isLike = lower.startsWith("like");
       const chatId = cb.message?.chat?.id;
       const title = extractTitleFromMessageText(cb.message?.text || "");
 
-      // 키워드 추출 & 선호도 업데이트
+      // (추가) Upstash Redis에 "좋아요 기사" 저장
+      try {
+        const userId = String(cb.from?.id || "");
+        const article = extractArticleFromCallback(cb);
+        if (userId) {
+          await saveLike({ userId, dayKST: dayKST(), article });
+        }
+      } catch (e) {
+        // 저장 실패해도 전체 플로우는 계속
+        console.error("saveLike failed:", e);
+      }
+
+      // GitHub 선호 키워드 갱신(기존 로직 유지)
       const { data: prefs, sha } = await loadPreferences();
       const keywords = extractKeywords(title);
       const updated = updatePreferencesObject(prefs, keywords, isLike);
       await savePreferences(updated, sha);
 
-      // 사용자 응답
-      await tgAnswerCallback(cb.id);
+      await tgAnswerCallback(cb.id, isLike ? "👍 좋아요 저장됨" : "👎 반영됨");
       if (chatId) {
         const shortTitle = title ? `'${title.slice(0, 30)}...'` : "이 뉴스";
         const msg = isLike
