@@ -1,83 +1,85 @@
 // api/cron-forward-liked.js
-export const config = { runtime: 'nodejs' };
+// 어제(KST) 좋아요 TOP4를 다른 채널로 전달 (문자 인코딩 이슈 방어)
 
-import { getAllLikesByDay } from '../lib/store.js';
+export const config = { runtime: "nodejs" };
+
+import { getAllLikesByDay } from "../lib/store.js";
 
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
-const FWD_CHANNEL_ID = process.env.FWD_CHANNEL_ID; // 다른 채널의 chat_id (예: -100xxxxxxxxxx)
+const FWD_CHANNEL_ID = process.env.FWD_CHANNEL_ID || process.env.DT_CHANNEL_ID; // 없으면 쿼리로 chatId 지정 가능
 
-function yesterdayKST() {
-  const nowKST = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const y = new Date(nowKST.getTime() - 24 * 60 * 60 * 1000);
-  return y.toISOString().slice(0, 10); // YYYY-MM-DD
+// 어제 날짜(한국시간) YYYY-MM-DD
+function kstDay(offset = 1) {
+  const t = Date.now() + 9 * 3600 * 1000 - offset * 24 * 3600 * 1000;
+  return new Date(t).toISOString().slice(0, 10);
 }
 
-function normKey(a) {
-  const t = (a.title || '').toLowerCase().trim().replace(/\s+/g, ' ');
-  const u = (a.url || '').toLowerCase().trim();
-  return u || t; // url 우선, 없으면 제목
+// 텍스트 정리: 텔레그램이 거부하는 비정상 문자 제거
+function sanitize(str = "") {
+  // 제어문자(탭/개행/CR 제외) + 잘못된 서로게이트 제거
+  return String(str)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/[\uD800-\uDFFF]/g, "")
+    .trim();
 }
 
 async function tgSend(chatId, text) {
-  const api = `https://api.telegram.org/bot${BOT}/sendMessage`;
+  const url = `https://api.telegram.org/bot${BOT}/sendMessage`;
   const body = {
     chat_id: chatId,
-    text,
-    parse_mode: 'HTML',
-    disable_web_page_preview: false
+    text: sanitize(text),
+    parse_mode: "HTML",
+    disable_web_page_preview: false,
   };
-  const r = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(body),
+  });
   const j = await r.json();
-  if (!j.ok) throw new Error(`Telegram send failed: ${JSON.stringify(j)}`);
+  if (!j.ok) throw new Error(j.description || "telegram error");
   return j;
 }
 
 export default async function handler(req, res) {
   try {
-    if (!BOT || !FWD_CHANNEL_ID) {
-      return res.status(500).json({ ok: false, error: 'Missing TELEGRAM_BOT_TOKEN or FWD_CHANNEL_ID' });
+    if (!BOT) return res.status(500).json({ ok: false, error: "Missing TELEGRAM_BOT_TOKEN" });
+
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const chatId = url.searchParams.get("chatId") || FWD_CHANNEL_ID;
+    if (!chatId) return res.status(500).json({ ok: false, error: "Missing FWD_CHANNEL_ID or chatId" });
+
+    const day = kstDay(1);
+    const liked = await getAllLikesByDay(day);
+
+    if (!liked || liked.length === 0) {
+      await tgSend(chatId, `📭 어제(${day}) 좋아요한 기사가 없었습니다.`);
+      return res.status(200).json({ ok: true, day, sent: 1, note: "no likes" });
     }
 
-    const day = yesterdayKST();
-    const items = await getAllLikesByDay(day); // 전날(KST) 모든 사용자 좋아요
-
-    if (!items.length) {
-      // 좋아요가 하나도 없으면 조용히 통과하거나 안내 메시지 1건만 전송
-      await tgSend(FWD_CHANNEL_ID, `📭 어제(${day} KST)는 좋아요된 뉴스가 없었습니다.`);
-      return res.status(200).json({ ok: true, sent: 1, day, note: 'no likes' });
-    }
-
-    // 같은 기사(제목/URL) 묶어서 집계
+    // 같은 기사(가능하면 url, 없으면 title) 카운팅
     const map = new Map();
-    for (const a of items) {
-      const key = normKey(a);
+    for (const it of liked) {
+      const title = sanitize(it?.title || "");
+      const urlStr = sanitize(it?.url || "");
+      const key = (urlStr || title).toLowerCase();
       if (!key) continue;
-      const cur = map.get(key) || { article: a, count: 0 };
+      const cur = map.get(key) || { title, url: urlStr, count: 0 };
       cur.count += 1;
-      // 최초 저장된 article을 유지(가장 온전한 제목/URL)
-      if (!cur.article.title && a.title) cur.article.title = a.title;
-      if (!cur.article.url && a.url) cur.article.url = a.url;
       map.set(key, cur);
     }
 
-    // 좋아요 수 내림차순 상위 4개
-    const top = Array.from(map.values())
-      .sort((x, y) => y.count - x.count)
-      .slice(0, 4);
+    const top = [...map.values()].sort((a, b) => b.count - a.count).slice(0, 4);
 
-    // 헤더 안내
-    await tgSend(FWD_CHANNEL_ID, `📌 어제(${day} KST) DT 채널 좋아요 TOP 4`);
-
-    // 개별 기사 전송
-    let sent = 1;
-    for (const { article, count } of top) {
-      const title = article.title || '제목 없음';
-      const url = article.url ? `\n${article.url}` : '';
-      await tgSend(FWD_CHANNEL_ID, `👍 ${count} • ${title}${url}`);
-      sent += 1;
+    // 전송(한 건 실패해도 전체 실패로 처리하지 않음)
+    let sent = 0, fail = 0;
+    try { await tgSend(chatId, `✅ 어제(${day}) 좋아요 TOP4`); sent++; } catch { fail++; }
+    for (const a of top) {
+      const line = a.url ? `📰 ${a.title}\n${a.url}` : `📰 ${a.title}`;
+      try { await tgSend(chatId, line); sent++; } catch { fail++; }
     }
 
-    return res.status(200).json({ ok: true, day, totalLikes: items.length, sent, top });
+    return res.status(200).json({ ok: true, day, topCount: top.length, sent, fail });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e) });
   }
